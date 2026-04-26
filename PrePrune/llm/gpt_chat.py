@@ -1,3 +1,4 @@
+import os
 from typing import Dict
 from typing import List, Union, Optional
 
@@ -9,30 +10,28 @@ from PrePrune.llm.format import Message
 from PrePrune.llm.llm import LLM
 from PrePrune.llm.llm_registry import LLMRegistry
 from PrePrune.llm.price import cost_count
+from dotenv import load_dotenv
 
-# 智谱 GLM 接口参数
-MINE_BASE_URL = "https://open.bigmodel.cn/api/paas/v4/"
-MINE_API_KEYS = "978b13fc43694bae98e118af895d35d0.Ot6pUKlGESPC5Wth"
+load_dotenv()
 
-# ===== Qwen API 参数 =====
-QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-QWEN_API_KEY = "sk-efe456d1242c417a8666db7915069c21"  # 推荐用环境变量
+# Read provider credentials from .env
+MINE_API_KEYS = os.getenv("MINE_API_KEYS", os.getenv("MINE_API_KEY", ""))
+MINE_BASE_URL = os.getenv("MINE_BASE_URL", "")
 
-# ===== Gemini API 参数 =====
-GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-GEMINI_API_KEY = "AIzaSyDgAlL2_Jt9tzPbw7btM46Dt5EFo-dOHJI"  # 强烈建议用环境变量
+QWEN_API_KEY = os.getenv("QWEN_API_KEY", "")
+QWEN_BASE_URL = os.getenv("QWEN_BASE_URL", "")
 
-# ===== DeepSeek API 参数 =====
-DEEPSEEK_BASE_URL = "https://api.deepseek.com"
-DEEPSEEK_API_KEY = "sk-952c9bd847294848a3d68a64181c2d29"  # 强烈建议用环境变量
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_BASE_URL = os.getenv("GEMINI_BASE_URL", "")
 
-# ===== Kimi (Moonshot) API 参数 =====
-KIMI_BASE_URL = "https://api.moonshot.cn/v1"
-KIMI_API_KEY = "sk-syIzHNKV6LBPXDdzn1Dxj4dnu0DUVJKr3Posj3GLHznL6cHA"  # 强烈建议用环境变量
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "")
 
-# ===== OpenAI API 参数 =====
-OPENAI_BASE_URL = "https://api.zhizengzeng.com/v1"
-OPENAI_API_KEY = "sk-zk2357717f2180fae4d4f486908d4617ec86952293c07657"  # 强烈建议用环境变量
+KIMI_API_KEY = os.getenv("KIMI_API_KEY", "")
+KIMI_BASE_URL = os.getenv("KIMI_BASE_URL", "")
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "")
 
 @retry(wait=wait_random_exponential(max=100), stop=stop_after_attempt(5))
 async def achat(

@@ -1,9 +1,17 @@
+import os
 from typing import List
 import re
 import time
 import json
 import openai
 from openai import OpenAI
+from dotenv import load_dotenv
+
+load_dotenv()
+
+QWEN_API_KEY = os.getenv("QWEN_API_KEY", "")
+QWEN_BASE_URL = os.getenv("QWEN_BASE_URL", "")
+
 
 class TokenTracker:
     def __init__(self):
@@ -55,24 +63,24 @@ class LLMScorer:
 
         prompt = f"""
         You are a strict evaluator.
-        
+
         Task:
         \"\"\"{task}\"\"\"
-        
+
         Agents:
         {agents_str}
-        
+
         Scoring rules:
         - Score each agent from 0 to 1
         - 1 = highly suitable, 0 = completely irrelevant
         - Be consistent across agents
         - Use at most 2 decimal places
         - The scores should roughly follow a normal distribution
-        
+
         IMPORTANT:
         - Output ONLY valid JSON
         - Do NOT include any explanation
-        
+
         Format:
         {{"scores": [0.85, 0.40, 0.92]}}
         """
@@ -103,8 +111,8 @@ class LLMScorer:
         prompt = self._build_batch_prompt(task, agent_descs)
 
         client = OpenAI(
-            api_key="sk-efe456d1242c417a8666db7915069c21",
-            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+            api_key=QWEN_API_KEY,
+            base_url=QWEN_BASE_URL
         )
 
         for attempt in range(self.max_retries):
