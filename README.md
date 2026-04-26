@@ -1,20 +1,20 @@
-# GDesigner
+# Agenda
 
 ## Overview
 
-We provide the code of our paper. The algorithm implementation code is in `GDesigner` folder, and the experimental code is in `experiments` folder.
+We provide the code of our paper. The algorithm implementation code is in `Agenda` folder, and the experimental code is in `experiments` folder.
 
 ## Quick Start
 
 ### Install packages
 
 ```bash
-conda create -n gdesigner python=3.10
-conda activate gdesigner
+conda create -n Agenda python=3.10
+conda activate Agenda
 pip install -r requirements.txt
 ```
 
-### Add API keys in `template.env` and change its name to `.env`
+### Add API keys in `.env`
 
 ```python
 BASE_URL = "" # the BASE_URL of OpenAI LLM backend
@@ -28,7 +28,7 @@ Download MMLU, HumanEval and GSM8K datasets from MMLU, HumanEval and GSM8K. And 
 ### Run GDesigner on MMLU by running the following scripts
 
 ```bash
-python experiments/run_mmlu.py --mode FullConnected --batch_size 4 --agent_nums 6 --num_iterations 10 --num_rounds 1 --optimized_spatial
+python experiments/run_mmlu.py --mode FullConnected --batch_size 4 --agent_nums 15 --num_iterations 10 --num_rounds 1 --optimized_spatial
 ```
 
 The above code verifies the experimental results of the `mmlu` dataset under different topologies.
