@@ -14,7 +14,7 @@ conda activate Agenda
 pip install -r requirements.txt
 ```
 
-### Add API keys in `.env`
+### Add API keys in `template.env` and change its name to `.env`
 
 ```python
 BASE_URL = "" # the BASE_URL of OpenAI LLM backend
