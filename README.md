@@ -1,8 +1,8 @@
-# GDesigner
+# Agenda
 
 ## Overview
 
-We provide the code of our paper. The algorithm implementation code is in `GDesigner` folder, and the experimental code is in `experiments` folder.
+We provide the code of our paper. The algorithm implementation code is in `Agenda` folder, and the experimental code is in `experiments` folder.
 
 ## Quick Start
 
@@ -14,7 +14,7 @@ conda activate Agenda
 pip install -r requirements.txt
 ```
 
-### Add API keys in `template.env` and change its name to `.env`
+### Add API keys in `.env`
 
 ```python
 BASE_URL = "" # the BASE_URL of OpenAI LLM backend
