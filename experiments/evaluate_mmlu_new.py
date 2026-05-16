@@ -17,7 +17,7 @@ async def evaluate(
     dataset,
     num_rounds: int = 1,
     limit_questions: Optional[int] = None,
-    eval_batch_size: int = 4,
+    eval_batch_size: int = 1,
     domain: str = "mmlu",
 ) -> float:
 
@@ -56,61 +56,106 @@ async def evaluate(
         max_concurrency=6,
         thr=2.5
     )
-
+    MAX_CONCURRENCY = 1
+    eval_semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
     agent_locks: Dict[str, asyncio.Lock] = {
         a: asyncio.Lock() for a in all_agents
     }
 
     async def run_one_task(task: str, agents: List[str]):
-
+        #######==========用锁模式==============
         locks = [agent_locks[a] for a in sorted(agents)]
         for lk in locks:
             await lk.acquire()
-
         try:
-            realized_graph = copy.deepcopy(graph)
+                realized_graph = copy.deepcopy(graph)
 
-            input_dict = dataset.str_task_to_input(task)
-            correct_answer = answers_task[task]
+                input_dict = dataset.str_task_to_input(task)
+                correct_answer = answers_task[task]
 
-            out = await realized_graph.node_run(
-                input_dict,
-                agents,
-                num_rounds
-            )
+                out = await realized_graph.node_run(
+                    input_dict,
+                    agents,
+                    num_rounds
+                )
 
-            if isinstance(out, tuple) and len(out) == 3:
-                raw_answer, log_prob, edge_weight = out
-            else:
-                raw_answer = out
-                log_prob = None
-                edge_weight = None
+                if isinstance(out, tuple) and len(out) == 3:
+                    raw_answer, log_prob, edge_weight = out
+                else:
+                    raw_answer = out
+                    log_prob = None
+                    edge_weight = None
 
-            answer = dataset.postprocess_answer(raw_answer)
-            print("\n" + "=" * 60)
-            print(task)
-            print("agents:", agents)
-            print("answer:", answer)
-            print("correct:", correct_answer)
-            accuracy.update(answer, correct_answer)
-            print(f"cost: {Cost.instance().value}")
-            print(f"prompt tokens: {PromptTokens.instance().value}")
-            print(f"completion tokens: {CompletionTokens.instance().value}")
-            accuracy.print()
+                answer = dataset.postprocess_answer(raw_answer)
+                # print("\n" + "=" * 60)
+                # print(task)
+                # print("agents:", agents)
+                # print("answer:", answer)
+                # print("correct:", correct_answer)
+                accuracy.update(answer, correct_answer)
+                # print(f"cost: {Cost.instance().value}")
+                # print(f"prompt tokens: {PromptTokens.instance().value}")
+                # print(f"completion tokens: {CompletionTokens.instance().value}")
+                accuracy.print()
 
-            return {
-                "task": task,
-                "agents": agents,
-                "raw_answer": raw_answer,
-                "log_prob": log_prob,
-                "edge_weight": edge_weight,
-                "correct_answer": correct_answer,
-                "graph": realized_graph
-            }
-
+                return {
+                    "task": task,
+                    "agents": agents,
+                    "raw_answer": raw_answer,
+                    "log_prob": log_prob,
+                    "edge_weight": edge_weight,
+                    "correct_answer": correct_answer,
+                    "graph": realized_graph
+                }
         finally:
             for lk in reversed(locks):
                 lk.release()
+        # =============信号量形式
+        # async with eval_semaphore:
+        #     try:
+        #         realized_graph = copy.deepcopy(graph)
+
+        #         input_dict = dataset.str_task_to_input(task)
+        #         correct_answer = answers_task[task]
+
+        #         out = await realized_graph.node_run(
+        #             input_dict,
+        #             agents,
+        #             num_rounds
+        #         )
+
+        #         if isinstance(out, tuple) and len(out) == 3:
+        #             raw_answer, log_prob, edge_weight = out
+        #         else:
+        #             raw_answer = out
+        #             log_prob = None
+        #             edge_weight = None
+
+        #         answer = dataset.postprocess_answer(raw_answer)
+        #         # print("\n" + "=" * 60)
+        #         # print(task)
+        #         # print("agents:", agents)
+        #         # print("answer:", answer)
+        #         # print("correct:", correct_answer)
+        #         accuracy.update(answer, correct_answer)
+        #         # print(f"cost: {Cost.instance().value}")
+        #         # print(f"prompt tokens: {PromptTokens.instance().value}")
+        #         # print(f"completion tokens: {CompletionTokens.instance().value}")
+        #         accuracy.print()
+
+        #         return {
+        #             "task": task,
+        #             "agents": agents,
+        #             "raw_answer": raw_answer,
+        #             "log_prob": log_prob,
+        #             "edge_weight": edge_weight,
+        #             "correct_answer": correct_answer,
+        #             "graph": realized_graph
+        #         }
+        #     except Exception as e:
+        #             print(f"执行任务时出错: {e}")
+        #             return None
+
 
     start_ts = time.time()
 
@@ -119,15 +164,36 @@ async def evaluate(
         for task, agents in task2agents.items()
     ]
     last_graph = None
+    with tqdm(total=len(coros), desc="并发推理", unit="题") as pbar:
+        # as_completed 会让先算完的题先返回，最大化利用时间窗口
+        for fut in asyncio.as_completed(coros):
+            res = await fut
 
-    for fut in tqdm(
-        asyncio.as_completed(coros),
-        total=len(coros),
-        desc="VGAE eval running"
-    ):
-        res = await fut
+            if res is not None:
+                last_graph = res["graph"]
 
-        last_graph = res["graph"]
+            current_acc = accuracy.get()
+            comp_tokens = CompletionTokens.instance().value
+            current_cost = Cost.instance().value
+
+            # 将这些指标实时挂载到进度条尾部
+            pbar.set_postfix({
+                "Acc": f"{current_acc:.2f}%",
+                "Tokens": int(comp_tokens),
+                "Cost": f"${current_cost:.3f}"
+            })
+
+            # 推进进度条
+            pbar.update(1)
+
+    # for fut in tqdm(
+    #     asyncio.as_completed(coros),
+    #     total=len(coros),
+    #     desc="VGAE eval running"
+    # ):
+    #     res = await fut
+
+    #     last_graph = res["graph"]
 
 
     print("\n" + "=" * 60)
