@@ -80,9 +80,6 @@ async def train(
 
         input_dict = dataset.str_task_to_input(task)
 
-        print(f"\nTask: {task}")
-        print("Selected agents:", agents)
-
         correct_answer = answers_task[task]
         correct_answers.append(correct_answer)
 
@@ -149,7 +146,8 @@ async def train(
     optimizer.step()
 
     avg_kl = torch.mean(torch.stack(kl_losses)).item()
-
+    torch.save({"vgae":graph.vgae.state_dict()},"model.pth")
+    print("模型已自动保存为 model.pth")
     print("\nTRAINING SUMMARY：")
     print("Correct Answers:", correct_answers)
     print("Raw Answers:", raw_answers)
