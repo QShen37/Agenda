@@ -4,6 +4,7 @@ from typing import List, Optional, Dict, Any
 import numpy as np
 import shortuuid
 import torch
+import asyncio # 确保文件顶部导入了 asyncio
 from torch_geometric.utils import dense_to_sparse
 
 from PrePrune.agents.agent_registry import AgentRegistry
@@ -392,87 +393,83 @@ class Graph(ABC):
 
         return final_answers, log_probs, edge_weight
 
+
     async def node_run(
             self,
             input: Dict[str, str],
             agent_res_name: List[str],
-            num_rounds: int = 3,
+            num_rounds: int = 1,
             max_tries: int = 3,
     ):
-
         log_probs = 0.0
-
         self.generate_spatial_logits(input["task"])
 
         active_nodes = {
-            node_id
-            for node_id, node in self.nodes.items()
-            if node.role in agent_res_name
+            node_id for node_id, node in self.nodes.items() if node.role in agent_res_name
         }
 
         if len(active_nodes) == 0:
             return ["No active nodes"], log_probs, np.zeros((0, 0))
 
         for _ in range(num_rounds):
-            res_prob, edge_weight = self.construct_spatial_connection(
-                input["task"],
-                agent_res_name,
-            )
-
+            res_prob, edge_weight = self.construct_spatial_connection(input["task"], agent_res_name)
             log_probs += res_prob
 
             in_degree = {
-                node_id: sum(
-                    1 for pred in self.nodes[node_id].spatial_predecessors
-                    if pred.id in active_nodes
-                )
+                node_id: sum(1 for pred in self.nodes[node_id].spatial_predecessors if pred.id in active_nodes)
                 for node_id in active_nodes
             }
 
-            zero_in_degree_queue = [
-                node_id for node_id, deg in in_degree.items() if deg == 0
-            ]
+            zero_in_degree_queue = [node_id for node_id, deg in in_degree.items() if deg == 0]
 
             while zero_in_degree_queue:
+                # 1. 把当前层的所有节点全部拿出来
+                current_layer = zero_in_degree_queue[:]
+                zero_in_degree_queue.clear()
 
-                current_node_id = zero_in_degree_queue.pop(0)
-                node = self.nodes[current_node_id]
+                # 2. 定义一个异步闭包函数来处理单个节点
+                async def process_node(node_id):
+                    node = self.nodes[node_id]
+                    if node is None: return node_id
 
-                if node is None:
-                    continue
+                    tries = 0
+                    success = False
+                    while tries < max_tries:
+                        try:
+                            # 使用 await async_execute
+                            await asyncio.to_thread(node.execute, input)
+                            success = True
+                            break
+                        except Exception as e:
+                            print(f"[ERROR] Node {node_id} failed: {e}")
+                            tries += 1
 
-                tries = 0
-                success = False
+                    if not success or len(node.outputs) == 0:
+                        print(f"[WARNING] Node {node_id} produced empty output")
+                    else:
+                        node.update_memorybank(input["task"], self.node_format_json.get(node.role, {}))
+                    
+                    return node_id # 返回完成的节点 ID
 
-                while tries < max_tries:
-                    try:
-                        node.execute(input)
-                        success = True
-                        break
-                    except Exception as e:
-                        print(f"[ERROR] Node {current_node_id} failed: {e}")
-                        tries += 1
+                # 3. 让这一层的所有 Agent 同时向大模型请求
+                finished_nodes = await asyncio.gather(*(process_node(nid) for nid in current_layer))
 
-                if not success or len(node.outputs) == 0:
-                    print(f"[WARNING] Node {current_node_id} produced empty output")
-                else:
-                    node.update_memorybank(
-                        input["task"],
-                        self.node_format_json.get(node.role, {})
-                    )
-
-                for successor in node.spatial_successors:
-                    if successor.id not in active_nodes:
-                        continue
-
-                    in_degree[successor.id] -= 1
-
-                    if in_degree[successor.id] == 0:
-                        zero_in_degree_queue.append(successor.id)
+                # 4. 当这一批并发结束后，统一更新它们的后继节点入度
+                for completed_id in finished_nodes:
+                    node = self.nodes[completed_id]
+                    for successor in node.spatial_successors:
+                        if successor.id not in active_nodes:
+                            continue
+                        in_degree[successor.id] -= 1
+                        if in_degree[successor.id] == 0:
+                            zero_in_degree_queue.append(successor.id)
+                            
             self.update_memory()
 
         self.connect_decision_node()
-        self.decision_node.execute(input)
+        # 决策节点也改为异步等待
+        await asyncio.to_thread(self.decision_node.execute, input)
+        
         final_answers = self.decision_node.outputs
         if not final_answers:
             final_answers = ["No answer of the decision node"]
