@@ -147,7 +147,6 @@ async def train(
 
     avg_kl = torch.mean(torch.stack(kl_losses)).item()
     torch.save({"vgae":graph.vgae.state_dict()},"model.pth")
-    print("模型已自动保存为 model.pth")
     print("\nTRAINING SUMMARY：")
     print("Correct Answers:", correct_answers)
     print("Raw Answers:", raw_answers)

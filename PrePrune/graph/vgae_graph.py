@@ -4,7 +4,7 @@ from typing import List, Optional, Dict, Any
 import numpy as np
 import shortuuid
 import torch
-import asyncio # 确保文件顶部导入了 asyncio
+import asyncio
 from torch_geometric.utils import dense_to_sparse
 
 from PrePrune.agents.agent_registry import AgentRegistry
@@ -166,13 +166,17 @@ class Graph(ABC):
         query_embedding = query_embedding.unsqueeze(0).repeat((self.num_nodes, 1))
         return torch.cat((self.features, query_embedding), dim=1)
 
+
     def generate_spatial_logits(self, task: str):
+
         new_feature = self.construct_new_feature(task)
 
         z, mu, logstd = self.vgae.encode(
             new_feature,
             self.role_adj_matrix,
         )
+
+
 
         prob_matrix = self.vgae.decode(
             z,
@@ -181,10 +185,12 @@ class Graph(ABC):
 
         self.kl_loss = self.vgae.kl_loss(mu, logstd)
 
+
         self.spatial_logits = min_max_norm(
             torch.flatten(prob_matrix)
         )
 
+        
         return prob_matrix
 
     @property
@@ -267,7 +273,6 @@ class Graph(ABC):
         ):
             out_node = self.find_node(potential_connection[0])
             in_node = self.find_node(potential_connection[1])
-
             out_role = out_node.role.lower()
             in_role = in_node.role.lower()
 
@@ -296,7 +301,6 @@ class Graph(ABC):
                 sample_prob = 1.0 if raw_prob > threshold else 0.0
 
             sample_prob = max(min(sample_prob, 1.0), 1e-9)
-
             if torch.rand(1).item() < sample_prob:
                 out_node.add_successor(in_node, "spatial")
                 log_probs.append(torch.log(torch.tensor(sample_prob)))
@@ -304,6 +308,9 @@ class Graph(ABC):
                 log_probs.append(
                     torch.log(torch.tensor(max(1 - sample_prob, 1e-9)))
                 )
+
+        if len(log_probs) == 0:
+            log_probs = [torch.tensor(0.0, requires_grad=self.optimized_spatial)]
 
         return torch.sum(torch.stack(log_probs)), edge_weight
 
@@ -340,6 +347,7 @@ class Graph(ABC):
             res_prob, edge_weight = self.construct_spatial_connection(
                 input["task"],
                 agent_res_name,
+                threshold=0.5
             )
 
             log_probs += res_prob
@@ -402,17 +410,19 @@ class Graph(ABC):
             max_tries: int = 3,
     ):
         log_probs = 0.0
-        self.generate_spatial_logits(input["task"])
+        edge_weight = np.zeros((0, 0)) 
 
         active_nodes = {
             node_id for node_id, node in self.nodes.items() if node.role in agent_res_name
         }
 
         if len(active_nodes) == 0:
-            return ["No active nodes"], log_probs, np.zeros((0, 0))
+            return ["No active nodes"], log_probs, edge_weight
+
+        self.generate_spatial_logits(input["task"])
 
         for _ in range(num_rounds):
-            res_prob, edge_weight = self.construct_spatial_connection(input["task"], agent_res_name)
+            res_prob, edge_weight = self.construct_spatial_connection(input["task"], agent_res_name,0.5)
             log_probs += res_prob
 
             in_degree = {
@@ -421,13 +431,13 @@ class Graph(ABC):
             }
 
             zero_in_degree_queue = [node_id for node_id, deg in in_degree.items() if deg == 0]
-
+            
             while zero_in_degree_queue:
-                # 1. 把当前层的所有节点全部拿出来
+
                 current_layer = zero_in_degree_queue[:]
                 zero_in_degree_queue.clear()
 
-                # 2. 定义一个异步闭包函数来处理单个节点
+
                 async def process_node(node_id):
                     node = self.nodes[node_id]
                     if node is None: return node_id
@@ -436,7 +446,6 @@ class Graph(ABC):
                     success = False
                     while tries < max_tries:
                         try:
-                            # 使用 await async_execute
                             await asyncio.to_thread(node.execute, input)
                             success = True
                             break
@@ -449,12 +458,11 @@ class Graph(ABC):
                     else:
                         node.update_memorybank(input["task"], self.node_format_json.get(node.role, {}))
                     
-                    return node_id # 返回完成的节点 ID
+                    return node_id 
 
-                # 3. 让这一层的所有 Agent 同时向大模型请求
                 finished_nodes = await asyncio.gather(*(process_node(nid) for nid in current_layer))
 
-                # 4. 当这一批并发结束后，统一更新它们的后继节点入度
+
                 for completed_id in finished_nodes:
                     node = self.nodes[completed_id]
                     for successor in node.spatial_successors:
@@ -467,7 +475,7 @@ class Graph(ABC):
             self.update_memory()
 
         self.connect_decision_node()
-        # 决策节点也改为异步等待
+
         await asyncio.to_thread(self.decision_node.execute, input)
         
         final_answers = self.decision_node.outputs
@@ -482,6 +490,9 @@ class Graph(ABC):
 
 
 def min_max_norm(tensor: torch.Tensor):
+    if tensor.numel() == 0:
+        return tensor
+
     min_val = tensor.min()
     max_val = tensor.max()
     normalized = (tensor - min_val) / (max_val - min_val + 1e-9)

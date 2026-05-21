@@ -66,8 +66,11 @@ class VGAE(torch.nn.Module):
         return z, mu, logstd
 
     def decode(self, z, task_idx):
-        num_nodes = z.size(0) - 1
+        num_nodes = z.size(0)
         zt = z[task_idx]
+
+        if num_nodes == 0:
+            return torch.zeros((0, 0), device=z.device)
 
         probs = []
 
@@ -77,7 +80,11 @@ class VGAE(torch.nn.Module):
                 edge_input = torch.cat([z[i], z[j], zt], dim=0)
                 prob = torch.sigmoid(self.decoder(edge_input))
                 row.append(prob)
-            probs.append(torch.stack(row))
+            if row:
+                probs.append(torch.stack(row))
+
+        if not probs:
+            return torch.zeros((num_nodes, num_nodes), device=z.device)
 
         return torch.stack(probs).squeeze(-1)
 
