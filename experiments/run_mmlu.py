@@ -67,10 +67,8 @@ def parse_args():
     parser.add_argument('--optimized_spatial',action='store_true')
     parser.add_argument('--optimized_temporal',action='store_true')
 
-    parser.add_argument('--load_model', type=str, default="model.pth",
-                        help="你想加载的模型权重文件路径 (例如: model.pth)")
-    parser.add_argument('--train_only', action='store_true',
-                        help="如果加上这个参数，训练结束后将直接退出，不进行 evaluate")
+    parser.add_argument('--load_model', type=str, default="model.pth")
+    parser.add_argument('--train_only', action='store_true')
     args = parser.parse_args()
     result_path = GDesigner_ROOT / "result"
     os.makedirs(result_path, exist_ok=True)
@@ -105,17 +103,14 @@ async def main():
                   optimized_spatial=args.optimized_spatial,
                   optimized_temporal=args.optimized_temporal,
                   **kwargs)
-    download()
+    # download()
     dataset_train = MMLUDataset('dev')
     dataset_val = MMLUDataset('val')
 
     if args.load_model:
         import torch
-        print(f"正在读取历史训练记忆: {args.load_model} ...")
-        # 你的环境如果不用GPU，可以加上 map_location=torch.device('cpu')
         checkpoint = torch.load(args.load_model)
         graph.vgae.load_state_dict(checkpoint["vgae"])
-        print("记忆读取完毕！现在可以直接使用训练过后的模型。")
 
     if args.optimized_spatial or args.optimized_temporal:
         await train(
@@ -130,12 +125,12 @@ async def main():
 
     
     if args.train_only:
-            print("训练完毕！检测到 --train_only 开关，系统已安全退出，帮你省下了评估考试的 Token！")
+            print("Only train")
     else:
-        print("进入闭卷考试模式 (Evaluate)...")
+        print("Evaluate")
         score = await evaluate(graph=graph, dataset=dataset_val, num_rounds=args.num_rounds,
                                limit_questions=limit_questions, eval_batch_size=args.batch_size)
-        print(f"最终团队考试得分 (Score): {score}")
+        print(f"Score: {score}")
 
 
 
